@@ -1,0 +1,4 @@
+<resources>
+    <string name="app_name">StopAndClear</string>
+    <string name="description">stop and clear cache of pokemongo</string>
+</resources>
