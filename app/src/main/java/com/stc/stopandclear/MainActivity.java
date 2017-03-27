@@ -7,6 +7,7 @@ import android.support.v7.app.AppCompatActivity;
 import android.util.Log;
 
 import java.io.BufferedReader;
+import java.io.DataOutputStream;
 import java.io.IOException;
 import java.io.InputStreamReader;
 
@@ -14,7 +15,6 @@ public class MainActivity extends AppCompatActivity {
     private static final String POKEMON_PKG_NAME = "com.nianticlabs.pokemongo";
     private static final int MS_TIME_TO_CLOSE = 1500;
     private static final String TAG = "StopAndClear";
-    private static final int INVALID_STACKID = -1;
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -24,17 +24,42 @@ public class MainActivity extends AppCompatActivity {
     @Override
     protected void onResume() {
         super.onResume();
-        new mainTask().execute();
+        String command = "am force-stop " + POKEMON_PKG_NAME + "\n";
+        command += "rm -rf /data/data/" + POKEMON_PKG_NAME + "/cache/*\n";
+        new mainTask().execute(command);
     }
 
-    private class mainTask extends AsyncTask<Void, Void, Void> {
+    private class mainTask extends AsyncTask<String, Void, Void> {
         @Override
-        protected Void doInBackground(Void... params) {
+        protected Void doInBackground(String... params) {
+            String command = params[0];
             try {
-                Process pForceStop = Runtime.getRuntime().exec("su shell am force-stop " + POKEMON_PKG_NAME);
-                pForceStop.waitFor();
-                Process pClearCache = Runtime.getRuntime().exec("su shell rm -rf /data/data/"+POKEMON_PKG_NAME+"/cache/*");
-                pClearCache.waitFor();
+                Process process = Runtime.getRuntime().exec("su");
+                DataOutputStream opt = new DataOutputStream(process.getOutputStream());
+                opt.writeBytes(command);
+                opt.writeBytes("exit\n");
+                opt.flush();
+                process.waitFor();
+                if(0 == process.exitValue()) {
+                    BufferedReader bufferedReader = new BufferedReader(
+                            new InputStreamReader(process.getInputStream()));
+                    StringBuilder log = new StringBuilder();
+                    String line;
+                    while ((line = bufferedReader.readLine()) != null) {
+                        log.append(String.format("%s\n", line));
+                    }
+                    if(0 < log.length()) Log.d(TAG, "run \""+ command +"\" success result = \n " + log.toString());
+                } else {
+                    Log.d(TAG, "run \""+command+"\"failed exit value =  " + process.exitValue());
+                    BufferedReader bufferedReader = new BufferedReader(
+                            new InputStreamReader(process.getErrorStream()));
+                    StringBuilder log = new StringBuilder();
+                    String line;
+                    while ((line = bufferedReader.readLine()) != null) {
+                        log.append(String.format("%s\n", line));
+                    }
+                    if(0 < log.length()) Log.d(TAG, "run \""+command+"\" Error = \n " + log.toString());
+                }
             } catch (InterruptedException | IOException e) {
                 e.printStackTrace();
             }
@@ -48,43 +73,5 @@ public class MainActivity extends AppCompatActivity {
                 }
             }, MS_TIME_TO_CLOSE);
         }
-        void tryClearInRecentApp(){
-            try {
-                // Run the command
-                Process pGetStackList = Runtime.getRuntime().exec("su shell am stack list");
-                BufferedReader bufferedReader = new BufferedReader(
-                        new InputStreamReader(pGetStackList.getInputStream()));
-
-                // Grab the results
-                StringBuilder log = new StringBuilder();
-                String line;
-                int pokemonStackId = INVALID_STACKID;
-                int tmpStackId=INVALID_STACKID;
-                String sPrefix = "Stack id=";
-                String sPostfix = " bounds=[";
-                while ((line = bufferedReader.readLine()) != null) {
-                    if(line.contains(sPrefix)){
-                        String sTmpStackId = line.substring(line.indexOf(sPrefix)+sPrefix.length(),
-                                line.indexOf(sPostfix));
-                        tmpStackId = Integer.parseInt(sTmpStackId);
-                        Log.d(TAG, String.format("tmpStackId = %d\n", tmpStackId));
-                    } else if (line.contains(POKEMON_PKG_NAME)){
-                        pokemonStackId = tmpStackId;
-                        Log.d(TAG, String.format("get %s, tmpStackId = %d, pokemonStackId = %d\n",
-                                POKEMON_PKG_NAME, tmpStackId, pokemonStackId));
-                    }
-                    log.append(String.format("%s\n", line));
-                }
-                Log.d(TAG, "am stack list report :\n " + log.toString());
-                Log.d(TAG, "pokemonStackId = " + pokemonStackId);
-                if(INVALID_STACKID != pokemonStackId){
-                    Process pClearCache = Runtime.getRuntime().exec("su shell am stack remove " + pokemonStackId);
-                    pClearCache.waitFor();
-                }
-            } catch (InterruptedException | IOException e) {
-                e.printStackTrace();
-            }
-        }
-
     }
 }
